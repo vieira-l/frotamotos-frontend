@@ -45,7 +45,7 @@ const SHELL_STORAGE_KEY = "frota_shell_v1"; // usado no Modo conectado (settings
    CLIENTE DE API (Modo conectado — backend real)
    Troque API_BASE pela URL do seu backend hospedado quando for para produção.
 ========================================================================= */
-const API_BASE = "http://localhost:4000";
+const API_BASE = "https://rent-moto-system-production.up.railway.app";
 
 const SERVER_RESOURCES = {
   motorcycles: "motorcycles", renters: "renters", contracts: "contracts", payments: "payments",
