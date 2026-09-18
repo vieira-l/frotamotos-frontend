@@ -80,11 +80,16 @@ function sanitizeForApi(key, obj) {
   return out;
 }
 
+const AUTH_TOKEN_KEY = "frota_auth_token";
+function getToken() { try { return localStorage.getItem(AUTH_TOKEN_KEY); } catch { return null; } }
+function setToken(t) { try { t ? localStorage.setItem(AUTH_TOKEN_KEY, t) : localStorage.removeItem(AUTH_TOKEN_KEY); } catch { /* sem storage disponível */ } }
+
 async function apiFetch(path, opts = {}) {
+  const token = getToken();
   const res = await fetch(`${API_BASE}${path}`, {
     ...opts,
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
   });
   let data = null;
   try { data = await res.json(); } catch { /* sem corpo */ }
@@ -101,8 +106,12 @@ async function apiHealthCheck() {
   } catch { return false; }
 }
 const api = {
-  login: async (username, password) => fromApiUser(await apiFetch("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) })),
-  logout: () => apiFetch("/auth/logout", { method: "POST" }).catch(() => {}),
+  login: async (username, password) => {
+    const data = await apiFetch("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
+    setToken(data.token);
+    return fromApiUser(data);
+  },
+  logout: () => apiFetch("/auth/logout", { method: "POST" }).catch(() => {}).finally(() => setToken(null)),
   me: async () => fromApiUser(await apiFetch("/auth/me")),
   list: (endpoint) => apiFetch(`/${endpoint}`),
   create: (endpoint, body) => apiFetch(`/${endpoint}`, { method: "POST", body: JSON.stringify(body) }),
