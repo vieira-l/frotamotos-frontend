@@ -45,7 +45,8 @@ const SHELL_STORAGE_KEY = "frota_shell_v1"; // usado no Modo conectado (settings
    CLIENTE DE API (Modo conectado — backend real)
    Troque API_BASE pela URL do seu backend hospedado quando for para produção.
 ========================================================================= */
-const API_BASE = "https://rent-moto-system-production.up.railway.app";
+// TROQUE a URL abaixo pela do seu backend (ex: "https://nome.onrender.com"), sem "/" no final.
+const API_BASE = "https://rent-moto-backend-system.onrender.com";
 
 const SERVER_RESOURCES = {
   motorcycles: "motorcycles", renters: "renters", contracts: "contracts", payments: "payments",
@@ -99,7 +100,7 @@ async function apiFetch(path, opts = {}) {
 async function apiHealthCheck() {
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 2500);
+    const t = setTimeout(() => ctrl.abort(), 75000);
     const res = await fetch(`${API_BASE}/health`, { signal: ctrl.signal });
     clearTimeout(t);
     return res.ok;
@@ -597,10 +598,14 @@ export default function App() {
 
   const loadAllCollections = useCallback(async () => {
     const keys = Object.keys(SERVER_RESOURCES);
-    const results = await Promise.all(keys.map((k) => api.list(SERVER_RESOURCES[k]).catch(() => [])));
+    let authFailed = false;
+    const results = await Promise.all(keys.map((k) => api.list(SERVER_RESOURCES[k]).catch((e) => {
+      if (/autenticad|expirad/i.test(e.message || "")) authFailed = true;
+      return [];
+    })));
     const out = {};
     keys.forEach((k, i) => { out[k] = k === "users" ? results[i].map(fromApiUser) : results[i]; });
-    return out;
+    return { out, authFailed };
   }, []);
 
   useEffect(() => {
@@ -614,10 +619,12 @@ export default function App() {
         const readNotifications = shell?.readNotifications || [];
         try {
           const me = await api.me();
-          const collections = await loadAllCollections();
+          const { out, authFailed } = await loadAllCollections();
+          if (authFailed) throw new Error("sessão inválida");
           setCurrentUser(me);
-          setDb({ ...collections, settings, readNotifications });
+          setDb({ ...out, settings, readNotifications });
         } catch {
+          setToken(null); // token guardado estava inválido/expirado — força novo login
           setDb({ ...EMPTY_COLLECTIONS, settings, readNotifications });
         }
       } else {
@@ -682,9 +689,18 @@ export default function App() {
   }, [mode, syncCollection]);
 
   const handleLoginApi = async (user) => {
+    if (!getToken()) {
+      alert("Não foi possível manter sua sessão neste navegador (armazenamento local bloqueado). Isso é comum em abas anônimas/privadas ou com bloqueio de rastreamento avançado. Use uma janela normal do navegador para acessar o sistema.");
+      return;
+    }
+    const { out, authFailed } = await loadAllCollections();
+    if (authFailed) {
+      alert("Não foi possível carregar os dados do servidor (sessão não confirmada). Tente entrar novamente.");
+      setToken(null);
+      return;
+    }
     setCurrentUser(user);
-    const collections = await loadAllCollections();
-    setDb((d) => ({ ...d, ...collections }));
+    setDb((d) => ({ ...d, ...out }));
   };
   const handleLogout = async () => {
     if (mode === "api") {
@@ -695,7 +711,7 @@ export default function App() {
   };
 
   if (loading || !db) {
-    return <div className="flex h-screen items-center justify-center bg-slate-50 text-slate-400">Carregando sistema...</div>;
+    return <div className="flex h-screen items-center justify-center bg-slate-50 text-slate-400">Carregando sistema... (se o servidor estava dormindo, pode levar até 1 minuto)</div>;
   }
   if (!currentUser) return <LoginScreen db={db} mode={mode} onLoginLocal={setCurrentUser} onLoginApi={handleLoginApi} />;
 
